@@ -3,14 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Premium Player</title>
+  <title>Audius Player</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     
-    /* Переменные для плавной смены цветов */
     :root {
-      --theme-color: #1DB954; /* Цвет по умолчанию (Spotify Green) */
+      --theme-color: #1DB954;
       --theme-color-glow: rgba(29, 185, 84, 0.4);
     }
 
@@ -21,14 +20,12 @@
       color: #ffffff !important;
       min-height: 100vh; padding: 20px 16px; overflow-x: hidden;
       display: flex; justify-content: center;
-      transition: background 0.8s ease;
     }
     
     .app { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 20px; padding-bottom: 30px; }
     .header h1 { font-size: 24px; font-weight: 800; color: #ffffff; }
     .header p { font-size: 14px; color: #b3b3b3; margin-top: 6px; font-weight: 500; }
 
-    /* Обложка с эффектом свечения, зависящим от трека */
     .cover {
       width: 100%; aspect-ratio: 1 / 1;
       background: linear-gradient(135deg, var(--theme-color) 0%, #111 100%);
@@ -37,7 +34,9 @@
       box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 60px var(--theme-color-glow);
       transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), background 0.8s ease, box-shadow 0.8s ease; 
       user-select: none;
+      overflow: hidden;
     }
+    .cover img { width: 100%; height: 100%; object-fit: cover; }
     .cover.playing { animation: pulse 3s ease-in-out infinite; }
     @keyframes pulse { 
       0%, 100% { transform: scale(1); box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 60px var(--theme-color-glow); } 
@@ -59,7 +58,6 @@
     .progress-wrap input[type="range"] {
       width: 100%; height: 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.2);
       outline: none; cursor: pointer; accent-color: var(--theme-color); -webkit-appearance: none; appearance: none;
-      transition: accent-color 0.8s;
     }
     .progress-wrap input[type="range"]::-webkit-slider-thumb {
       -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%;
@@ -87,15 +85,8 @@
       content: "🔍"; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 16px; opacity: 0.6;
     }
 
-    .tabs { display: flex; gap: 8px; margin-bottom: 15px; }
-    .tab-btn {
-      flex: 1; padding: 10px 5px; border-radius: 12px; border: 1px solid transparent; background: rgba(255,255,255,0.06);
-      color: #a7a7a7; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.3s; text-align: center;
-    }
-    .tab-btn.active { background: rgba(255, 255, 255, 0.1); color: var(--theme-color); border: 1px solid var(--theme-color); }
-
     .playlist h3 { font-size: 13px; font-weight: 700; color: #a7a7a7; margin-bottom: 12px; letter-spacing: 1px; text-transform: uppercase; padding-left: 4px; }
-    .playlist ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .playlist ul { list-style: none; display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }
     
     .playlist li {
       padding: 14px 16px; border-radius: 14px; background: rgba(255, 255, 255, 0.04);
@@ -114,14 +105,13 @@
     }
     .playlist li.active .track-main::before { content: "▶"; color: var(--theme-color); font-size: 14px; }
 
-    .like-btn { background: none; border: none; font-size: 20px; cursor: pointer; padding: 5px; opacity: 0.5; transition: transform 0.2s, opacity 0.2s; }
-    .like-btn.liked { opacity: 1; transform: scale(1.1); }
+    .loader { text-align: center; padding: 20px; color: #a7a7a7; font-size: 14px; }
   </style>
 </head>
 <body>
   <div class="app">
     <header class="header">
-      <h1>My Player</h1>
+      <h1>Audius Player</h1>
       <p id="user-name">Привет!</p>
     </header>
 
@@ -146,21 +136,16 @@
 
     <div>
       <div class="search-bar">
-        <input type="text" id="search" placeholder="Поиск трека..." />
-      </div>
-      <div class="tabs">
-        <button class="tab-btn active" id="tab-all">Все</button>
-        <button class="tab-btn" id="tab-liked">❤️ Избранное</button>
-        <button class="tab-btn" id="tab-recs">✨ Для вас</button>
+        <input type="text" id="search" placeholder="Поиск в Audius (например, lofi)..." />
       </div>
     </div>
 
     <div class="playlist">
-      <ul id="playlist"></ul>
+      <ul id="playlist"><li class="loader">Загрузка популярных треков...</li></ul>
     </div>
   </div>
 
-  <audio id="audio"></audio>
+  <audio id="audio" crossorigin="anonymous"></audio>
 
   <script>
     const tg = window.Telegram?.WebApp;
@@ -170,30 +155,18 @@
       if (user) { document.getElementById('user-name').textContent = 'С возвращением, ' + user.first_name + '!'; }
     }
 
-    // ДОБАВЛЕН ЦВЕТ (color) ДЛЯ КАЖДОГО ТРЕКА
-    const tracks = [
-      { id: 1, title: 'Blinding Lights', artist: 'The Weeknd', src: 'https://cdns-preview-c.dzcdn.net/stream/c-c9c2367e6d83d7825c67b9e24d2b873b-7.mp3', color: '#E32636' }, // Красный
-      { id: 2, title: 'Save Your Tears', artist: 'The Weeknd', src: 'https://cdns-preview-e.dzcdn.net/stream/c-e345d0b4f2ad99c41cb47e2479719957-13.mp3', color: '#FF8C00' }, // Оранжевый
-      { id: 3, title: 'Clocks', artist: 'Coldplay', src: 'https://cdns-preview-3.dzcdn.net/stream/c-3848b501c65e60103d923c5db4465243-12.mp3', color: '#1E90FF' }, // Синий
-      { id: 4, title: 'Viva La Vida', artist: 'Coldplay', src: 'https://cdns-preview-9.dzcdn.net/stream/c-9f1a896e5184cbc85f60ac698b919c1a-15.mp3', color: '#FFD700' }, // Золотой
-      { id: 5, title: 'Believer', artist: 'Imagine Dragons', src: 'https://cdns-preview-6.dzcdn.net/stream/c-6c4439f3e42c24a5c3d7e1f88c2b7b2a-7.mp3', color: '#8A2BE2' }, // Фиолетовый
-      { id: 6, title: 'Thunder', artist: 'Imagine Dragons', src: 'https://cdns-preview-1.dzcdn.net/stream/c-1549878b919563d8f8dc7a1d6e244211-5.mp3', color: '#00CED1' } // Бирюзовый
-    ];
-
-    let likedTracks = JSON.parse(localStorage.getItem('likedTracks')) || [];
-    let currentIndex = 0;
-    let currentTab = 'all';
-    let searchQuery = '';
+    // Используем публичный API Audius (не требует ключей)
+    const AUDIUS_API = 'https://discoveryprovider.audius.co/v1';
+    
+    let tracks = [];
+    let currentIndex = -1;
+    let searchTimeout;
 
     const audio = document.getElementById('audio');
     const playBtn = document.getElementById('play');
     const cover = document.getElementById('cover');
     const playlistEl = document.getElementById('playlist');
     const searchInput = document.getElementById('search');
-    
-    const tabAll = document.getElementById('tab-all');
-    const tabLiked = document.getElementById('tab-liked');
-    const tabRecs = document.getElementById('tab-recs');
 
     function formatTime(sec) {
       if (isNaN(sec)) return '0:00';
@@ -202,10 +175,8 @@
       return m + ':' + s;
     }
 
-    // Функция смены цветовой темы (свечения)
     function updateTheme(color) {
       document.documentElement.style.setProperty('--theme-color', color);
-      // Создаем прозрачную версию цвета для свечения (RGBA)
       const hex = color.replace('#', '');
       const r = parseInt(hex.substring(0, 2), 16);
       const g = parseInt(hex.substring(2, 4), 16);
@@ -213,84 +184,76 @@
       document.documentElement.style.setProperty('--theme-color-glow', `rgba(${r}, ${g}, ${b}, 0.4)`);
     }
 
+    // Загрузка треков из Audius
+    async function fetchTracks(query = '') {
+      playlistEl.innerHTML = '<li class="loader">Поиск...</li>';
+      try {
+        let url = `${AUDIUS_API}/tracks/trending?app_name=TGPlayer`;
+        if (query) {
+          url = `${AUDIUS_API}/tracks/search?query=${encodeURIComponent(query)}&app_name=TGPlayer`;
+        }
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.data && data.data.length > 0) {
+          tracks = data.data.slice(0, 15); // Берем первые 15 результатов
+          renderPlaylist();
+        } else {
+          playlistEl.innerHTML = '<li class="loader">Ничего не найдено</li>';
+        }
+      } catch (error) {
+        console.error('Ошибка поиска:', error);
+        playlistEl.innerHTML = '<li class="loader">Ошибка загрузки. Попробуй позже.</li>';
+      }
+    }
+
     function loadTrack(index) {
-      if (tracks.length === 0) return;
+      if (index < 0 || index >= tracks.length) return;
       currentIndex = index;
       const track = tracks[index];
       
-      audio.src = track.src;
+      // Audius отдает прямую ссылку на поток
+      audio.src = track.stream_url || `https://discoveryprovider.audius.co/v1/tracks/${track.id}/stream?app_name=TGPlayer`;
+      
       document.getElementById('track-title').textContent = track.title;
-      document.getElementById('track-artist').textContent = track.artist;
+      document.getElementById('track-artist').textContent = track.user.name;
       
-      // Меняем цвет при загрузке трека!
-      updateTheme(track.color || '#1DB954'); 
-      
-      renderPlaylist();
-    }
-
-    function toggleLike(id, event) {
-      event.stopPropagation();
-      if (likedTracks.includes(id)) {
-        likedTracks = likedTracks.filter(trackId => trackId !== id);
+      // Устанавливаем обложку, если есть
+      if (track.artwork && track.artwork['480x480']) {
+        cover.innerHTML = `<img src="${track.artwork['480x480']}" alt="cover">`;
       } else {
-        likedTracks.push(id);
+        cover.innerHTML = '🎶';
       }
-      localStorage.setItem('likedTracks', JSON.stringify(likedTracks));
-      renderPlaylist();
-    }
 
-    function getRecommendations() {
-      if (likedTracks.length === 0) {
-        return [...tracks].sort(() => 0.5 - Math.random()).slice(0, 3);
-      }
-      const likedArtists = [...new Set(tracks.filter(t => likedTracks.includes(t.id)).map(t => t.artist))];
-      let recommended = tracks.filter(t => likedArtists.includes(t.artist) && !likedTracks.includes(t.id));
-      if (recommended.length < 3) {
-        const others = tracks.filter(t => !likedArtists.includes(t.artist) && !likedTracks.includes(t.id)).sort(() => 0.5 - Math.random());
-        recommended = recommended.concat(others);
-      }
-      return recommended.slice(0, 5);
+      // Генерируем цвет на основе ID трека для разнообразия
+      const colors = ['#1DB954', '#E32636', '#1E90FF', '#8A2BE2', '#FF8C00', '#00CED1'];
+      const color = colors[track.id % colors.length];
+      updateTheme(color);
+      
+      renderPlaylist();
     }
 
     function renderPlaylist() {
       playlistEl.innerHTML = '';
-      let filteredTracks = tracks;
-      
-      if (currentTab === 'liked') {
-        filteredTracks = tracks.filter(t => likedTracks.includes(t.id));
-      } else if (currentTab === 'recs') {
-        filteredTracks = getRecommendations();
-      }
-
-      if (searchQuery) {
-        filteredTracks = filteredTracks.filter(t => t.title.toLowerCase().includes(searchQuery) || t.artist.toLowerCase().includes(searchQuery));
-      }
-
-      if (filteredTracks.length === 0) {
-        playlistEl.innerHTML = '<li style="justify-content:center; color:#a7a7a7; background:none;">Ничего не найдено</li>';
+      if (tracks.length === 0) {
+        playlistEl.innerHTML = '<li class="loader">Введи запрос для поиска</li>';
         return;
       }
 
-      filteredTracks.forEach((track) => {
+      tracks.forEach((track, index) => {
         const li = document.createElement('li');
-        const isActive = tracks[currentIndex]?.id === track.id;
+        const isActive = currentIndex === index;
         if (isActive) li.classList.add('active');
 
         const mainDiv = document.createElement('div');
         mainDiv.className = 'track-main';
-        mainDiv.innerHTML = `<span>${track.title} — ${track.artist}</span>`;
-
-        const likeBtn = document.createElement('button');
-        likeBtn.className = 'like-btn ' + (likedTracks.includes(track.id) ? 'liked' : '');
-        likeBtn.innerHTML = likedTracks.includes(track.id) ? '❤️' : '🤍';
-        likeBtn.onclick = (e) => toggleLike(track.id, e);
+        mainDiv.innerHTML = `<span>${track.title} — ${track.user.name}</span>`;
 
         li.appendChild(mainDiv);
-        li.appendChild(likeBtn);
 
         li.addEventListener('click', () => {
-          const realIndex = tracks.findIndex(t => t.id === track.id);
-          loadTrack(realIndex);
+          loadTrack(index);
           audio.play();
         });
 
@@ -298,23 +261,13 @@
       });
     }
 
+    // Обработчик поиска с задержкой (чтобы не спамить API)
     searchInput.addEventListener('input', (e) => {
-      searchQuery = e.target.value.toLowerCase();
-      renderPlaylist();
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        fetchTracks(e.target.value.trim());
+      }, 800);
     });
-
-    function switchTab(tabName) {
-      currentTab = tabName;
-      [tabAll, tabLiked, tabRecs].forEach(btn => btn.classList.remove('active'));
-      if (tabName === 'all') tabAll.classList.add('active');
-      if (tabName === 'liked') tabLiked.classList.add('active');
-      if (tabName === 'recs') tabRecs.classList.add('active');
-      renderPlaylist();
-    }
-
-    tabAll.addEventListener('click', () => switchTab('all'));
-    tabLiked.addEventListener('click', () => switchTab('liked'));
-    tabRecs.addEventListener('click', () => switchTab('recs'));
 
     playBtn.addEventListener('click', () => {
       if (audio.paused) audio.play(); else audio.pause();
@@ -324,11 +277,13 @@
     audio.addEventListener('pause', () => { playBtn.textContent = '▶'; cover.classList.remove('playing'); });
 
     document.getElementById('next').addEventListener('click', () => {
+      if (tracks.length === 0) return;
       currentIndex = (currentIndex + 1) % tracks.length;
       loadTrack(currentIndex); audio.play();
     });
 
     document.getElementById('prev').addEventListener('click', () => {
+      if (tracks.length === 0) return;
       currentIndex = (currentIndex - 1 + tracks.length) % tracks.length;
       loadTrack(currentIndex); audio.play();
     });
@@ -347,7 +302,8 @@
       audio.currentTime = (e.target.value / 100) * audio.duration;
     });
 
-    if (tracks.length > 0) loadTrack(0);
+    // Загружаем популярные треки при старте
+    fetchTracks();
   </script>
 </body>
 </html>
